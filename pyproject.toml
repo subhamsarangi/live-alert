@@ -1,0 +1,24 @@
+[tool.poetry]
+name = "live-alert"
+version = "0.1.0"
+description = ""
+authors = ["subhamsarangi <subhamsarangi2016@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+fastapi = "0.104.1"
+uvicorn = "0.24.0"
+python-multipart = "0.0.6"
+pyjwt = "2.8.0"
+python-jose = {version = "3.3.0", extras = ["cryptography"]}
+sqlalchemy = "2.0.23"
+pydantic = {version = "2.5.0", extras = ["email"]}
+passlib = {version = "1.7.4", extras = ["bcrypt"]}
+python-dotenv = "1.0.0"
+bcrypt = "4.0.1"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

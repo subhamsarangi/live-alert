@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Social Feed</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.1.3/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-primary mb-4">
+        <div class="container">
+            <span class="navbar-brand">Social Feed</span>
+            <div id="nav-right" class="d-none">
+                <span id="user-email" class="text-white me-3"></span>
+                <button class="btn btn-outline-light me-2" id="bell-btn">
+                    <i class="fas fa-bell"></i>
+                    <span id="notification-count" class="badge bg-danger ms-1 d-none">0</span>
+                </button>
+                <button class="btn btn-outline-light" id="logout-btn">Logout</button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div id="auth-section">
+            <div class="row justify-content-center">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <ul class="nav nav-tabs card-header-tabs">
+                                <li class="nav-item">
+                                    <a class="nav-link active" href="#" id="login-tab">Login</a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link" href="#" id="register-tab">Register</a>
+                                </li>
+                            </ul>
+                        </div>
+                        <div class="card-body">
+                            <form id="auth-form">
+                                <div class="mb-3">
+                                    <input type="email" class="form-control" id="email" placeholder="Email" required>
+                                </div>
+                                <div class="mb-3">
+                                    <input type="password" class="form-control" id="password" placeholder="Password" required>
+                                </div>
+                                <button type="submit" class="btn btn-primary w-100" id="auth-submit">Login</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="main-section" class="d-none">
+            <div class="row">
+                <div class="col-md-8">
+                    <div class="card mb-4">
+                        <div class="card-header">Create Post</div>
+                        <div class="card-body">
+                            <form id="post-form">
+                                <div class="mb-3">
+                                    <textarea class="form-control" id="post-content" rows="3" placeholder="What's on your mind?" required></textarea>
+                                </div>
+                                <button type="submit" class="btn btn-primary">Post</button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <div id="posts-container">
+                    </div>
+                </div>
+
+                <div class="col-md-4">
+                    <div class="card">
+                        <div class="card-header">Users to Follow</div>
+                        <div class="card-body" id="users-container">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="notificationModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Notifications</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="notifications-container">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.1.3/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+
+    <script>
+        let authToken = localStorage.getItem('authToken');
+        let userEmail = localStorage.getItem('userEmail');
+        let isLogin = true;
+
+        function setAuthHeaders() {
+            return authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
+        }
+
+        function showAuth() {
+            $('#auth-section').removeClass('d-none');
+            $('#main-section').addClass('d-none');
+            $('#nav-right').addClass('d-none');
+        }
+
+        function showMain() {
+            $('#auth-section').addClass('d-none');
+            $('#main-section').removeClass('d-none');
+            $('#nav-right').removeClass('d-none');
+            $('#user-email').text(userEmail);
+            loadPosts();
+            loadUsers();
+            checkNotifications();
+            setInterval(checkNotifications, 3000);
+        }
+
+        function checkNotifications() {
+            $.ajax({
+                url: '/notifications/count',
+                method: 'GET',
+                headers: setAuthHeaders(),
+                success: function(data) {
+                    if (data.count > 0) {
+                        $('#notification-count').text(data.count).removeClass('d-none');
+                    } else {
+                        $('#notification-count').addClass('d-none');
+                    }
+                }
+            });
+        }
+
+        function loadPosts() {
+            $.ajax({
+                url: '/posts',
+                method: 'GET',
+                headers: setAuthHeaders(),
+                success: function(posts) {
+                    let html = '';
+                    posts.forEach(post => {
+                        html += `
+                            <div class="card mb-3">
+                                <div class="card-body">
+                                    <h6 class="card-subtitle mb-2 text-muted">${post.author}</h6>
+                                    <p class="card-text">${post.content}</p>
+                                    <small class="text-muted">${new Date(post.created_at).toLocaleString()}</small>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    $('#posts-container').html(html);
+                }
+            });
+        }
+
+        function loadUsers() {
+            $.ajax({
+                url: '/users',
+                method: 'GET',
+                headers: setAuthHeaders(),
+                success: function(users) {
+                    let html = '';
+                    users.forEach(user => {
+                        const buttonClass = user.is_following ? 'btn-danger' : 'btn-primary';
+                        const buttonText = user.is_following ? 'Unfollow' : 'Follow';
+                        const action = user.is_following ? 'unfollow' : 'follow';
+                        
+                        html += `
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <span>${user.email}</span>
+                                <button class="btn btn-sm ${buttonClass}" onclick="toggleFollow(${user.id}, '${action}', this)">
+                                    ${buttonText}
+                                </button>
+                            </div>
+                        `;
+                    });
+                    $('#users-container').html(html);
+                }
+            });
+        }
+
+        function toggleFollow(userId, action, button) {
+            const method = action === 'follow' ? 'POST' : 'DELETE';
+            const endpoint = action === 'follow' ? `/follow/${userId}` : `/unfollow/${userId}`;
+            
+            $.ajax({
+                url: endpoint,
+                method: method,
+                headers: setAuthHeaders(),
+                success: function() {
+                    toastr.success(`User ${action}ed successfully`);
+                    loadUsers();
+                },
+                error: function() {
+                    toastr.error(`Failed to ${action} user`);
+                }
+            });
+        }
+
+        $('#login-tab').click(function() {
+            isLogin = true;
+            $(this).addClass('active');
+            $('#register-tab').removeClass('active');
+            $('#auth-submit').text('Login');
+        });
+
+        $('#register-tab').click(function() {
+            isLogin = false;
+            $(this).addClass('active');
+            $('#login-tab').removeClass('active');
+            $('#auth-submit').text('Register');
+        });
+
+        $('#auth-form').submit(function(e) {
+            e.preventDefault();
+            const email = $('#email').val();
+            const password = $('#password').val();
+            
+            if (!email || !password) {
+                toastr.error('Please fill all fields');
+                return;
+            }
+
+            const endpoint = isLogin ? '/login' : '/register';
+            
+            $.ajax({
+                url: endpoint,
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ email, password }),
+                success: function(data) {
+                    authToken = data.access_token;
+                    userEmail = data.email;
+                    localStorage.setItem('authToken', authToken);
+                    localStorage.setItem('userEmail', userEmail);
+                    toastr.success(isLogin ? 'Login successful' : 'Registration successful');
+                    showMain();
+                },
+                error: function(xhr) {
+                    const error = xhr.responseJSON?.detail || 'Authentication failed';
+                    toastr.error(error);
+                }
+            });
+        });
+
+        $('#post-form').submit(function(e) {
+            e.preventDefault();
+            const content = $('#post-content').val().trim();
+            
+            if (!content) {
+                toastr.error('Post content cannot be empty');
+                return;
+            }
+
+            $.ajax({
+                url: '/posts',
+                method: 'POST',
+                headers: setAuthHeaders(),
+                contentType: 'application/json',
+                data: JSON.stringify({ content }),
+                success: function() {
+                    toastr.success('Post created successfully');
+                    $('#post-content').val('');
+                    loadPosts();
+                },
+                error: function() {
+                    toastr.error('Failed to create post');
+                }
+            });
+        });
+
+        $('#bell-btn').click(function() {
+            $.ajax({
+                url: '/notifications',
+                method: 'GET',
+                headers: setAuthHeaders(),
+                success: function(notifications) {
+                    let html = '';
+                    if (notifications.length === 0) {
+                        html = '<p class="text-muted">No notifications</p>';
+                    } else {
+                        notifications.forEach(notification => {
+                            html += `
+                                <div class="alert alert-info">
+                                    <strong>${notification.author_email}</strong> posted something new
+                                    <br><small>${new Date(notification.created_at).toLocaleString()}</small>
+                                </div>
+                            `;
+                        });
+                    }
+                    $('#notifications-container').html(html);
+                    $('#notificationModal').modal('show');
+                    setTimeout(checkNotifications, 1000);
+                }
+            });
+        });
+
+        $('#logout-btn').click(function() {
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('userEmail');
+            authToken = null;
+            userEmail = null;
+            showAuth();
+            toastr.success('Logged out successfully');
+        });
+
+        $(document).ready(function() {
+            if (authToken && userEmail) {
+                showMain();
+            } else {
+                showAuth();
+            }
+        });
+    </script>
+</body>
+</html>

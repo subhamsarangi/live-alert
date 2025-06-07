@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+*.lock
+*.db
+meta.txt
