@@ -82,6 +82,16 @@
                 </div>
             </div>
         </div>
+
+        <div id="single-post-section" class="d-none">
+            <div class="row justify-content-center">
+                <div class="col-md-8">
+                    <button class="btn btn-secondary mb-3" id="back-to-feed">← Back to Feed</button>
+                    <div id="single-post-container">
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <div class="modal fade" id="notificationModal" tabindex="-1">
@@ -105,6 +115,7 @@
         let authToken = localStorage.getItem('authToken');
         let userEmail = localStorage.getItem('userEmail');
         let isLogin = true;
+        let notificationInterval;
 
         function setAuthHeaders() {
             return authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
@@ -113,21 +124,62 @@
         function showAuth() {
             $('#auth-section').removeClass('d-none');
             $('#main-section').addClass('d-none');
+            $('#single-post-section').addClass('d-none');
             $('#nav-right').addClass('d-none');
+            if (notificationInterval) {
+                clearInterval(notificationInterval);
+                notificationInterval = null;
+            }
         }
 
         function showMain() {
             $('#auth-section').addClass('d-none');
             $('#main-section').removeClass('d-none');
+            $('#single-post-section').addClass('d-none');
             $('#nav-right').removeClass('d-none');
             $('#user-email').text(userEmail);
             loadPosts();
             loadUsers();
             checkNotifications();
-            setInterval(checkNotifications, 3000);
+            if (notificationInterval) {
+                clearInterval(notificationInterval);
+            }
+            notificationInterval = setInterval(checkNotifications, 3000);
+        }
+
+        function showSinglePost(slug) {
+            $('#main-section').addClass('d-none');
+            $('#single-post-section').removeClass('d-none');
+            loadSinglePost(slug);
+        }
+
+        function loadSinglePost(slug) {
+            $.ajax({
+                url: `/post/${slug}`,
+                method: 'GET',
+                headers: setAuthHeaders(),
+                success: function(post) {
+                    const html = `
+                        <div class="card">
+                            <div class="card-body">
+                                <h6 class="card-subtitle mb-2 text-muted">${post.author}</h6>
+                                <p class="card-text">${post.content}</p>
+                                <small class="text-muted">${new Date(post.created_at).toLocaleString()}</small>
+                            </div>
+                        </div>
+                    `;
+                    $('#single-post-container').html(html);
+                },
+                error: function() {
+                    toastr.error('Post not found');
+                    showMain();
+                }
+            });
         }
 
         function checkNotifications() {
+            if (!authToken) return;
+            
             $.ajax({
                 url: '/notifications/count',
                 method: 'GET',
@@ -137,6 +189,16 @@
                         $('#notification-count').text(data.count).removeClass('d-none');
                     } else {
                         $('#notification-count').addClass('d-none');
+                    }
+                },
+                error: function(xhr) {
+                    if (xhr.status === 401) {
+                        localStorage.removeItem('authToken');
+                        localStorage.removeItem('userEmail');
+                        authToken = null;
+                        userEmail = null;
+                        showAuth();
+                        toastr.error('Session expired. Please login again.');
                     }
                 }
             });
@@ -293,8 +355,8 @@
                     } else {
                         notifications.forEach(notification => {
                             html += `
-                                <div class="alert alert-info">
-                                    <strong>${notification.author_email}</strong> posted something new
+                                <div class="alert alert-info notification-item" style="cursor: pointer;" data-slug="${notification.post_slug}">
+                                    <strong>${notification.author_email}</strong> posted: "${notification.post_preview}"
                                     <br><small>${new Date(notification.created_at).toLocaleString()}</small>
                                 </div>
                             `;
@@ -303,8 +365,18 @@
                     $('#notifications-container').html(html);
                     $('#notificationModal').modal('show');
                     setTimeout(checkNotifications, 1000);
+                    
+                    $('.notification-item').click(function() {
+                        const slug = $(this).data('slug');
+                        $('#notificationModal').modal('hide');
+                        showSinglePost(slug);
+                    });
                 }
             });
+        });
+
+        $('#back-to-feed').click(function() {
+            showMain();
         });
 
         $('#logout-btn').click(function() {
@@ -312,6 +384,10 @@
             localStorage.removeItem('userEmail');
             authToken = null;
             userEmail = null;
+            if (notificationInterval) {
+                clearInterval(notificationInterval);
+                notificationInterval = null;
+            }
             showAuth();
             toastr.success('Logged out successfully');
         });

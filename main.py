@@ -17,9 +17,11 @@ from sqlalchemy.orm import sessionmaker, Session, relationship
 from pydantic import BaseModel, EmailStr
 from passlib.context import CryptContext
 import jwt
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 from dotenv import load_dotenv
+import re
+import secrets
 
 load_dotenv()
 
@@ -43,7 +45,7 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True)
     hashed_password = Column(String)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     posts = relationship("Post", back_populates="author")
     followers = relationship(
@@ -58,8 +60,9 @@ class Post(Base):
     __tablename__ = "posts"
     id = Column(Integer, primary_key=True, index=True)
     content = Column(Text)
+    slug = Column(String, unique=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     author = relationship("User", back_populates="posts")
 
@@ -69,7 +72,7 @@ class Follow(Base):
     id = Column(Integer, primary_key=True, index=True)
     follower_id = Column(Integer, ForeignKey("users.id"))
     following_id = Column(Integer, ForeignKey("users.id"))
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     follower = relationship("User", foreign_keys=[follower_id])
     following = relationship("User", foreign_keys=[following_id])
@@ -80,9 +83,11 @@ class Notification(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     post_id = Column(Integer, ForeignKey("posts.id"))
+    post_slug = Column(String)
     author_email = Column(String)
+    post_preview = Column(String)
     is_read = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 Base.metadata.create_all(bind=engine)
@@ -100,6 +105,13 @@ class UserLogin(BaseModel):
 
 class PostCreate(BaseModel):
     content: str
+
+
+def create_slug(content: str) -> str:
+    words = re.findall(r"\w+", content.lower())[:5]
+    slug_words = "-".join(words)
+    random_suffix = secrets.token_hex(4)
+    return f"{slug_words}-{random_suffix}"
 
 
 def get_db():
@@ -120,7 +132,7 @@ def get_password_hash(password):
 
 def create_access_token(data: dict):
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
@@ -185,17 +197,24 @@ def create_post(
     if not post.content.strip():
         raise HTTPException(status_code=400, detail="Post content cannot be empty")
 
-    db_post = Post(content=post.content, user_id=current_user.id)
+    slug = create_slug(post.content)
+    while db.query(Post).filter(Post.slug == slug).first():
+        slug = create_slug(post.content)
+
+    db_post = Post(content=post.content, slug=slug, user_id=current_user.id)
     db.add(db_post)
     db.commit()
     db.refresh(db_post)
 
+    preview = post.content[:50] + "..." if len(post.content) > 50 else post.content
     followers = db.query(Follow).filter(Follow.following_id == current_user.id).all()
     for follow in followers:
         notification = Notification(
             user_id=follow.follower_id,
             post_id=db_post.id,
+            post_slug=slug,
             author_email=current_user.email,
+            post_preview=preview,
         )
         db.add(notification)
     db.commit()
@@ -203,6 +222,7 @@ def create_post(
     return {
         "id": db_post.id,
         "content": db_post.content,
+        "slug": db_post.slug,
         "created_at": db_post.created_at,
     }
 
@@ -216,11 +236,30 @@ def get_posts(
         {
             "id": p.id,
             "content": p.content,
+            "slug": p.slug,
             "author": p.author.email,
             "created_at": p.created_at,
         }
         for p in posts
     ]
+
+
+@app.get("/post/{slug}")
+def get_post_by_slug(
+    slug: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    post = db.query(Post).filter(Post.slug == slug).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    return {
+        "id": post.id,
+        "content": post.content,
+        "slug": post.slug,
+        "author": post.author.email,
+        "created_at": post.created_at,
+    }
 
 
 @app.get("/users")
@@ -311,7 +350,13 @@ def get_notifications(
     db.commit()
 
     return [
-        {"id": n.id, "author_email": n.author_email, "created_at": n.created_at}
+        {
+            "id": n.id,
+            "author_email": n.author_email,
+            "post_preview": n.post_preview,
+            "post_slug": n.post_slug,
+            "created_at": n.created_at,
+        }
         for n in notifications
     ]
 
