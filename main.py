@@ -1,7 +1,16 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from datetime import datetime, timedelta, timezone
+import os
+import re
+import secrets
+
+from dotenv import load_dotenv
+import jwt
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from pydantic import BaseModel, EmailStr
+from passlib.context import CryptContext
 from sqlalchemy import (
     create_engine,
     Column,
@@ -12,23 +21,15 @@ from sqlalchemy import (
     ForeignKey,
     Boolean,
 )
-from sqlalchemy.orm import declarative_base
-from sqlalchemy.orm import sessionmaker, Session, relationship
-from pydantic import BaseModel, EmailStr
-from passlib.context import CryptContext
-import jwt
-from datetime import datetime, timedelta, timezone
-import os
-from dotenv import load_dotenv
-import re
-import secrets
+from sqlalchemy.orm import declarative_base, sessionmaker, Session, relationship
+
 
 load_dotenv()
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-here")
+SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
